@@ -55,6 +55,7 @@ import lightgbm as lgb
 from catboost import CatBoostClassifier
 
 import helixai_common as hc
+import helixai_visuals as hv
 
 # ══════════════════════════════════════════════
 # SABİTLER
@@ -352,6 +353,16 @@ def run_master_pipeline(train_path, test_path=None, output_dir='master_results',
         'em_test_prior_check': em_check, 'test': test_metrics,
         'shap_top10': shap_imp.head(10).to_dict(), 'elapsed_min': round(elapsed / 60, 2),
     }
+
+    # [v1-YENİ] Akademik görselleştirme (bkz. kanser_pipeline_v1.py'deki
+    # AYNI entegrasyon notu — helixai_visuals.generate_all_visuals report'a
+    # oof_y_true/oof_y_prob ve fold_*_values alanlarını ekler; bu yüzden
+    # JSON dump'tan ÖNCE çağrılır).
+    hv.generate_all_visuals(
+        report, fold_results, output_dir=output_dir, test_prior=test_prior,
+        panel_name="MASTER", prefix="master",
+    )
+
     rep_path = os.path.join(output_dir, 'master_report_v1.json')
     with open(rep_path, 'w', encoding='utf-8') as f:
         json.dump(report, f, indent=2, ensure_ascii=False, default=str)

@@ -68,6 +68,7 @@ import lightgbm as lgb
 from catboost import CatBoostClassifier
 
 import helixai_common as hc
+import helixai_visuals as hv
 
 # ══════════════════════════════════════════════
 # SABİTLER
@@ -451,6 +452,18 @@ def run_kanser_pipeline(train_path, test_path=None, output_dir='kanser_results',
         'em_test_prior_check': em_check, 'test': test_metrics,
         'shap_top10': shap_imp.head(10).to_dict(), 'elapsed_min': round(elapsed / 60, 2),
     }
+
+    # [v1-YENİ] Akademik görselleştirme: gerçek (OOF-tabanlı) ROC/PR/CM/
+    # Calibration/Threshold grafikleri + fold dağılımları + SHAP top10 +
+    # pipeline şeması + HTML dashboard. Bu çağrı `report`'a oof_y_true/
+    # oof_y_prob ve fold_f1_values/fold_mcc_values/fold_spec_values
+    # alanlarını da MUTASYONLA ekler — bu yüzden JSON'a yazmadan ÖNCE
+    # çalıştırılır (aşağıdaki dump bu alanları da içersin).
+    hv.generate_all_visuals(
+        report, fold_results, output_dir=output_dir, test_prior=test_prior,
+        panel_name="KANSER", prefix="kanser",
+    )
+
     rep_path = os.path.join(output_dir, 'kanser_report_v1.json')
     with open(rep_path, 'w', encoding='utf-8') as f:
         json.dump(report, f, indent=2, ensure_ascii=False, default=str)
