@@ -431,8 +431,28 @@ def run_cftr_pipeline(train_path, test_path=None, output_dir='cftr_results',
         importance.reset_index().rename(columns={'index': 'feature', 0: 'shap_mean_abs'}
                                          ).to_csv(os.path.join(output_dir, 'cftr_shap.csv'), index=False)
     except Exception as e:
-        print(f"  [UYARI] SHAP başarısız oldu ({type(e).__name__}: {e}) — atlanıyor, pipeline devam ediyor.")
-        importance, shap_method = pd.Series(dtype=float), "failed"
+        print(f"  [UYARI] SHAP başarısız oldu ({type(e).__name__}: {e}).")
+        print("          Güvenli düşüş: model.feature_importances_ (gain) kullanılıyor.")
+        try:
+            if chosen_strategy == 'simple':
+                # LogisticRegression için katsayıların mutlak değeri = "önem"
+                coefs = np.abs(final_models['simple'].coef_[0])
+                importance = pd.Series(coefs, index=X_full.columns).sort_values(ascending=False)
+                shap_method = "simple_coef_fallback"
+            else:
+                imp_sum = np.zeros(X_full.shape[1])
+                for name, mdl in final_models.items():
+                    imp_sum = imp_sum + final_weights[name] * mdl.feature_importances_
+                importance = pd.Series(imp_sum, index=X_full.columns).sort_values(ascending=False)
+                shap_method = "ensemble_feature_importances_fallback"
+            print(f"  [Yöntem: {shap_method}] Top-{min(10,len(importance))}:")
+            for feat, val in importance.head(10).items():
+                print(f"  {feat:30s} {val:.4f}")
+            importance.reset_index().rename(columns={'index': 'feature', 0: 'shap_mean_abs'}
+                                             ).to_csv(os.path.join(output_dir, 'cftr_shap.csv'), index=False)
+        except Exception as e2:
+            print(f"  [UYARI] Yedek yöntem de başarısız oldu ({type(e2).__name__}: {e2}) — atlanıyor.")
+            importance, shap_method = pd.Series(dtype=float), "failed"
 
     elapsed = time.time() - t_start
     print("\n" + "#"*60)

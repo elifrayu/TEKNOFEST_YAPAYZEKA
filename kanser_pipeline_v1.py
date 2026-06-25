@@ -85,6 +85,12 @@ W_XGB, W_LGB, W_CAT = 0.35, 0.30, 0.35
 SPW_CANDIDATES     = (0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0)
 ABLATION_N_REPEATS = 2
 
+# [v1-YENİ, PAH'taki gözlemden sonra eklendi] N=388 ile 371 özelliğin
+# tamamını taramak hem çok yavaş hem de aşırı öğrenme riski taşıyor —
+# PAH'ta bu tavansız haliyle ~2 saat sürmüş ve düşük specificity/MCC ile
+# sonuçlanmıştı. Aynı gerekçeyle burada da bir tavan konuyor.
+K_MAX_FEATURES = 40
+
 PROTECTED_PREFIXES = ('EK_',)   # [v1-YENİ] "klonalite/log molekülleri geçerli" notuna uyum
 N_CLUSTERS          = 4         # [v1-YENİ] gen-sayısı bilinmiyor; ablation ile de denenebilir
 
@@ -173,7 +179,7 @@ def train_fold(X_tr_raw, y_tr, X_val_raw, y_val, train_prior, test_prior,
     X_tr_f, dropped_corr = hc.correlation_filter(X_tr, protected_prefixes=PROTECTED_PREFIXES)
     X_val_f = X_val.drop(columns=dropped_corr, errors='ignore')
 
-    sel = hc.shap_feature_selection(X_tr_f, y_tr, X_val_f, y_val)
+    sel = hc.shap_feature_selection(X_tr_f, y_tr, X_val_f, y_val, k_max=K_MAX_FEATURES)
     X_tr_s, X_val_s = X_tr_f[sel], X_val_f[sel]
 
     xgb_m = build_xgb(spw)
@@ -278,14 +284,22 @@ def run_shap_kanser(fold_results, X_train, output_dir, panel_name="KANSER", pref
             sv = __import__('shap').TreeExplainer(hc.get_base_estimator(model)).shap_values(X_s)
             sv_weighted = sv_weighted + best['weights'][name] * sv
         shap_method = "weighted_ensemble"
+        importance = pd.Series(np.abs(sv_weighted).mean(axis=0), index=X_s.columns).sort_values(ascending=False)
     except Exception as e:
         print(f"  [UYARI] Ağırlıklı ensemble SHAP başarısız oldu ({type(e).__name__}: {e}).")
         top_name = max(best['weights'], key=best['weights'].get)
-        print(f"          Güvenli düşüş: en yüksek ağırlıklı model ('{top_name}') ile devam ediliyor.")
-        sv_weighted = __import__('shap').TreeExplainer(hc.get_base_estimator(best['models_cal'][top_name])).shap_values(X_s)
-        shap_method = f"{top_name}_only_fallback"
+        print(f"          Güvenli düşüş 1: en yüksek ağırlıklı model ('{top_name}') ile SHAP deneniyor.")
+        try:
+            sv_weighted = __import__('shap').TreeExplainer(hc.get_base_estimator(best['models_cal'][top_name])).shap_values(X_s)
+            shap_method = f"{top_name}_only_fallback"
+            importance = pd.Series(np.abs(sv_weighted).mean(axis=0), index=X_s.columns).sort_values(ascending=False)
+        except Exception as e2:
+            print(f"  [UYARI] SHAP tamamen başarısız oldu ({type(e2).__name__}: {e2}).")
+            print("          Güvenli düşüş 2: model.feature_importances_ (gain) kullanılıyor.")
+            base_est = hc.get_base_estimator(best['models_cal'][top_name])
+            importance = pd.Series(base_est.feature_importances_, index=X_s.columns).sort_values(ascending=False)
+            shap_method = f"{top_name}_feature_importances_fallback"
 
-    importance = pd.Series(np.abs(sv_weighted).mean(axis=0), index=X_s.columns).sort_values(ascending=False)
     print(f"\n  [SHAP yöntemi: {shap_method}] Top-10 — {panel_name}:")
     for feat, val in importance.head(10).items():
         bar = "#" * int(val / importance.iloc[0] * 25) if importance.iloc[0] > 0 else ""

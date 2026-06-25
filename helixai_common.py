@@ -373,9 +373,21 @@ def shap_feature_selection(X_tr, y_tr, X_val, y_val, k_max=None, k_step=5, seed=
     )
     q.fit(X_tr, y_tr, verbose=False)
 
-    exp  = shap.TreeExplainer(q)
-    sv   = exp.shap_values(X_tr)
-    imp  = pd.Series(np.abs(sv).mean(axis=0), index=X_tr.columns).sort_values(ascending=False)
+    # [DÜZELTME] shap<->xgboost sürüm uyumsuzluğuna karşı güvenli düşüş.
+    # Bazı shap/xgboost sürüm kombinasyonlarında TreeExplainer, xgboost'un
+    # internal base_score formatını okuyamayıp hata fırlatabilir (örn.
+    # "could not convert string to float: '[8.57e-1]'"). Takım üyeleri
+    # farklı makinelerde farklı sürümler kullanabileceğinden, pipeline bu
+    # yüzden ÇÖKMEMELİ — SHAP başarısız olursa otomatik olarak XGBoost'un
+    # kendi (gain-tabanlı, versiyon-bağımsız) feature_importances_'ına düşülür.
+    try:
+        exp = shap.TreeExplainer(q)
+        sv  = exp.shap_values(X_tr)
+        imp = pd.Series(np.abs(sv).mean(axis=0), index=X_tr.columns).sort_values(ascending=False)
+    except Exception as e:
+        print(f"  [UYARI] SHAP özellik sıralaması başarısız oldu ({type(e).__name__}: {e}). "
+              f"XGBoost feature_importances_'a (gain) düşülüyor.")
+        imp = pd.Series(q.feature_importances_, index=X_tr.columns).sort_values(ascending=False)
 
     best_prauc, best_n = -1, min(20, cap)
     for k in range(k_step, cap+1, k_step):
@@ -663,14 +675,25 @@ def run_shap(fold_results, X_train, output_dir, panel_name="?", prefix="shap"):
             sv = shap.TreeExplainer(get_base_estimator(model)).shap_values(X_s)
             sv_weighted = sv_weighted + best['weights'][name] * sv
         shap_method = "weighted_ensemble"
+        importance = pd.Series(np.abs(sv_weighted).mean(axis=0), index=X_s.columns).sort_values(ascending=False)
     except Exception as e:
         print(f"  [UYARI] Ağırlıklı ensemble SHAP başarısız oldu ({type(e).__name__}: {e}).")
         top_name = max(best['weights'], key=best['weights'].get)
-        print(f"          Güvenli düşüş: en yüksek ağırlıklı model ('{top_name}') ile devam ediliyor.")
-        sv_weighted = shap.TreeExplainer(get_base_estimator(best['models_cal'][top_name])).shap_values(X_s)
-        shap_method = f"{top_name}_only_fallback"
-
-    importance = pd.Series(np.abs(sv_weighted).mean(axis=0), index=X_s.columns).sort_values(ascending=False)
+        print(f"          Güvenli düşüş 1: en yüksek ağırlıklı model ('{top_name}') ile SHAP deneniyor.")
+        try:
+            sv_weighted = shap.TreeExplainer(get_base_estimator(best['models_cal'][top_name])).shap_values(X_s)
+            shap_method = f"{top_name}_only_fallback"
+            importance = pd.Series(np.abs(sv_weighted).mean(axis=0), index=X_s.columns).sort_values(ascending=False)
+        except Exception as e2:
+            # [DÜZELTME] SHAP/xgboost sürüm uyumsuzluğu (örn. base_score format
+            # hatası) tüm SHAP çağrılarını kırabilir. Bu durumda raporlama adımı
+            # PIPELINE'I ÇÖKERTMEMELİ — modelin kendi feature_importances_'ına
+            # (gain-tabanlı, versiyon-bağımsız) düşülür.
+            print(f"  [UYARI] SHAP tamamen başarısız oldu ({type(e2).__name__}: {e2}).")
+            print("          Güvenli düşüş 2: model.feature_importances_ (gain) kullanılıyor.")
+            base_est = get_base_estimator(best['models_cal'][top_name])
+            importance = pd.Series(base_est.feature_importances_, index=X_s.columns).sort_values(ascending=False)
+            shap_method = f"{top_name}_feature_importances_fallback"
     print(f"\n  [SHAP yöntemi: {shap_method}] Top-10 — {panel_name}:")
     for feat, val in importance.head(10).items():
         bar = "#" * int(val / importance.iloc[0] * 25) if importance.iloc[0] > 0 else ""

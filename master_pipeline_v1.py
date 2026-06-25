@@ -72,6 +72,12 @@ W_XGB, W_LGB, W_CAT = 0.35, 0.30, 0.35
 SPW_CANDIDATES     = (0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0)
 ABLATION_N_REPEATS = 2
 
+# [v1-YENİ, PAH'taki gözlemden sonra eklendi] Master'da N=2931 PAH/Kanser'den
+# çok daha büyük olduğundan daha fazla özellik aşırı öğrenme riskini o kadar
+# artırmaz, ANCAK tavansız tarama hâlâ çok yavaş olur (her fold'da ~74 aday
+# model fit). Daha yüksek ama hâlâ sınırlı bir tavan veriliyor.
+K_MAX_FEATURES = 80
+
 # ══════════════════════════════════════════════
 # MODEL YAPILARI
 # ══════════════════════════════════════════════
@@ -160,7 +166,7 @@ def train_fold(X_tr_raw, y_tr, X_val_raw, y_val, train_prior, test_prior,
     X_tr_f, dropped_corr = hc.correlation_filter(X_tr)
     X_val_f = X_val.drop(columns=dropped_corr, errors='ignore')
 
-    sel = hc.shap_feature_selection(X_tr_f, y_tr, X_val_f, y_val)
+    sel = hc.shap_feature_selection(X_tr_f, y_tr, X_val_f, y_val, k_max=K_MAX_FEATURES)
     X_tr_s, X_val_s = X_tr_f[sel], X_val_f[sel]
 
     xgb_m = build_xgb(spw)

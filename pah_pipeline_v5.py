@@ -75,6 +75,12 @@ SPW_CANDIDATES_JOINT     = (0.3, 1.0, 2.0, 3.0)
 OVERSAMPLE_CANDIDATES    = (False, True)
 ABLATION_N_REPEATS       = 2
 
+# [v5-YENİ] PAH'ta N=372 satırla 371 özelliğin tamamını taramak hem çok
+# yavaş (~2 saat) hem de N'ye kıyasla aşırı geniş bir arama uzayı — aşırı
+# öğrenme riskini artırır. CFTR'deki k_max mantığıyla aynı gerekçeyle bir
+# tavan konuyor; amaç hız/overfitting kontrolü, model seçimi değil.
+K_MAX_FEATURES = 40
+
 # ══════════════════════════════════════════════
 # MODEL YAPILARI
 # ══════════════════════════════════════════════
@@ -125,7 +131,7 @@ def train_fold(X_tr_raw, y_tr, X_val_raw, y_val, train_prior, test_prior,
     X_tr_f, dropped_corr = hc.correlation_filter(X_tr)
     X_val_f = X_val.drop(columns=dropped_corr, errors='ignore')
 
-    sel = hc.shap_feature_selection(X_tr_f, y_tr, X_val_f, y_val)
+    sel = hc.shap_feature_selection(X_tr_f, y_tr, X_val_f, y_val, k_max=K_MAX_FEATURES)
     X_tr_s, X_val_s = X_tr_f[sel], X_val_f[sel]
 
     xgb_m = build_xgb(spw)
