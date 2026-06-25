@@ -503,6 +503,13 @@ def run_repeated_cv(X, y, test_prior, train_fold_fn, n_splits, n_repeats,
     for k, v in summary.items():
         print(f"  {k:<16} {v['mean']:>10.4f} +/-{v['std']:>8.4f}  [{v['min']:.4f}, {v['max']:.4f}]")
 
+    # OOF tahminlerini fold_results'a ekle (görselleştirme için)
+    oof_y_true = np.concatenate([r['val_labels']          for r in fold_results])
+    oof_y_prob = np.concatenate([r['val_probs_corrected'] for r in fold_results])
+    # summary'e de ekle — rapor JSON'una geçsin
+    summary['_oof_y_true'] = oof_y_true.tolist()
+    summary['_oof_y_prob'] = oof_y_prob.tolist()
+
     return fold_results, summary, train_prior
 
 def run_loocv(X, y, test_prior, train_fold_fn, fold_kwargs=None, panel_name="?",

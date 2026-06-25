@@ -334,7 +334,8 @@ def run_master_pipeline(train_path, test_path=None, output_dir='master_results',
     print("#"*60)
     print(f"  Süre: {elapsed/60:.1f} dk | Kalibrasyon: {calib_method} | spw: {chosen_spw} | Eşik: {final_threshold:.4f}")
     for k, v in cv_summary.items():
-        print(f"  {k:<16} {v['mean']:>8.4f} +/-{v['std']:>8.4f}")
+        if isinstance(v, dict) and 'mean' in v:
+            print(f"  {k:<16} {v['mean']:>8.4f} +/-{v['std']:>8.4f}")
 
     report = {
         'panel': 'MASTER', 'version': 'v1',
@@ -345,7 +346,9 @@ def run_master_pipeline(train_path, test_path=None, output_dir='master_results',
                    'calibration_method': calib_method, 'shap_method': shap_method},
         'calibration_method_comparison': calib_compare,
         'ablation_scale_pos_weight': ablation_results,
-        'cv_summary': {k: {'mean': v['mean'], 'std': v['std']} for k, v in cv_summary.items()},
+        'cv_summary': {k: {'mean': v['mean'], 'std': v['std']} for k, v in cv_summary.items() if isinstance(v, dict) and 'mean' in v},
+        'oof_y_true': cv_summary.get('_oof_y_true', []),
+        'oof_y_prob': cv_summary.get('_oof_y_prob', []),
         'stress_test': {'before': {k: v for k, v in stress_test_results['before'].items() if isinstance(v, (int, float))},
                         'after': {k: v for k, v in stress_test_results['after'].items() if isinstance(v, (int, float))},
                         'bootstrap_used': stress_test_results['bootstrap_used']},
